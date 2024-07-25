@@ -1,0 +1,176 @@
+const jwt = require("jsonwebtoken");
+const path = require("path");
+const Jimp = require("jimp");
+const fs = require("fs/promises");
+const gravatar = require("gravatar");
+const User = require("../models/usersModel");
+require("dotenv").config();
+const secret = process.env.SECRET;
+
+
+const signUp = async (req, res, next) => {
+    const { username, email, password } = res.body;
+    const user = await User.findOne({ email }).lean();
+
+if (user) {
+    return res.status(409).json({
+        status: "error",
+        code: 409,
+        message: "Email is already in use",
+        data: "Conflict",
+    });
+}
+
+try {
+    const newUser = new User({ username, email });
+    newUser.setPassword(password);
+
+    newUser.avatarURL = gravatar.url(email);
+    await newUser.save();
+
+    res.status(201).json({
+        status: "success",
+        code: 201,
+        data: {
+        name: {
+            email: email,
+            subscription: newUser.subscription,
+        },
+    },
+    });
+} catch (error) {
+    next(error);
+}
+};
+
+
+const logIn = async (req, res, next) => {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+
+try {
+    if (!user || !user.validPassword(password)) {
+
+        return res.status(400).json({
+        status: "error",
+        code: 400,
+        message: "Incorrect login or password",
+        data: "Bad request",
+    });
+    }
+    const payload = {
+        id: user.id,
+        username: user.username,
+    };
+
+    const token = jwt.sign(payload, secret);
+    user.token = token;
+    await user.save();
+    res.json({
+    status: "success",
+    code: 200,
+    data: {
+        token,
+        user: {
+            email: user.email,
+            subscription: user.subscription,
+            avatarURL: user.avatarURL,
+        },
+    },
+    });
+} catch (error) {
+    next(error);
+}
+};
+
+const current = async (req, res, next) => {
+const { email, subscription } = req.user;
+res.json({
+    code: 200,
+    data: {
+        email: email,
+        subscription: subscription,
+    },
+});
+};
+
+const logOut = async (req, res) => {
+
+try {
+    const userId = req.user.id;
+    await User.findByIdAndUpdate(userId, { token: null });
+    res.status(200).json({
+    message: "You are logged out!",
+    });
+} catch (error) {
+    res.status(500).json({
+        status: "error",
+        code: 500,
+        message: "Internal Server Error",
+    });
+}
+};
+
+const uploadDirname = path.join(__dirname, "../public/avatars");
+
+const updateAvatar = async (req, res, next) => {
+    const { userId } = req.user;
+    const { path: tmpUpload, originalname } = req.file;
+
+try {
+    const newAvatarName = `${userId}_${originalname}`;
+    const outputPath = path.join(uploadDirname, newAvatarName);
+
+    const image = await Jimp.read(tmpUpload);
+    await image.resize(250, 250).writeAsync(outputPath);
+
+    await fs.unlink(tmpUpload);
+
+    res.status(200).json({
+    avatarURL: `/avatars/${newAvatarName}`,
+    });
+} catch (error) {
+    console.log(error);
+    next(error);
+}
+};
+
+const updateSubscription = async (req, res, next) => {
+
+try {
+    const { subscription } = req.body;
+    const userId = await User.findByIdAndUpdate(
+    req.user.id,
+    { subscription },
+    { new: true }
+    );
+
+if (!userId) {
+    return res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "User not found",
+    });
+    }
+
+    res.json({
+        status: "sucsess",
+        code: 200,
+        data: {
+        email: userId.email,
+        subscription: userId.subscription,
+    },
+    });
+} catch (error) {
+    next(error);
+}
+};
+
+module.exports = {
+    signUp,
+    logIn,
+    current,
+    logOut,
+    updateAvatar,
+    updateSubscription,
+};
