@@ -1,9 +1,12 @@
 const express = require("express");
-const ctrlUser = require("../../controller/users");
 const router = express.Router();
+const userController = require("../../controller/usersController");
+const authMiddleware = require("../../validate/userMiddleware");
+const { userJoiValidate } = require("../../validate/userJoi");
 
-router.post("/signup", ctrlUser.register);
-router.post("/login", ctrlUser.login);
-router.get("/logout", ctrlUser.auth, ctrlUser.logout);
+router.post("/signup", userJoiValidate, userController.signUp);
+router.post("/login", userJoiValidate, authMiddleware, userController.logIn);
+router.get("/logout", authMiddleware, userController.logOut);
+router.get("/current", authMiddleware, userController.current);
 
 module.exports = router;
